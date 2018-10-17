@@ -1,0 +1,293 @@
+
+*Load libraries* IMPORTANT --> DO NOT SKIP
+---
+```{r, include=F}
+library(knitr)
+library(dplyr)
+library(plyr)
+library(vegan)
+library(usdm)
+library(ggfortify)
+library(nlme)
+library(lmerTest)
+library(lmtest)
+library(lme4)
+library(mvpart) # for MRT, package needs to be installed from github using devtools::install_github("cran/mvpart")
+library(visreg)
+library(gridExtra)
+library(multcomp) #glht
+library(phia) #testInteractions
+library(ape) #varcomp
+library(Hmisc) # for rcorr
+library(reshape)
+opts_knit$set(root.dir = '/Users/lottevanboheemen/Documents/Monash/PhD/Analyses/Data', warning=FALSE, message=T)
+```
+
+*Load data* IMPORTANT --> DO NOT SKIP
+---
+```{r}
+phen <- read.table("phen.txt", header=T) #non-transformed individual traits
+pc_mean <-read.table("pc_mean.txt", header=T) #population mean traits + bioclimatic variables
+pcho_mean<- read.table("pcho_mean.txt",header=T)
+```
+
+*Create subsets* IMPORTANT --> DO NOT SKIP
+---
+
+```{r}
+phenC <- phen[which(phen$Treatment == 'C'),]
+phenD <- phen[which(phen$Treatment == 'D'),]
+
+pc_meanC <- pc_mean[which(pc_mean$Treatment == 'C'),]
+pc_meanD <- pc_mean[which(pc_mean$Treatment == 'D'),]
+```
+
+*Test the trait differences between Ranges in MANOVA*
+---
+
+Do this without any rho>0.7 traits
+```{r}
+m.man<-manova(cbind( T_fl_start, T_repal, sqrt(T_Sla), T_fit_all,sqrt(T_sexmismatch+60), sqrt(T_seed_20),  T_MaxSlope_cm_Day) ~ Range*E_Latitudeabs+I(E_Latitudeabs^2), data=pc_meanC)
+summary(m.man, test="Wilks")
+
+summary.aov(m.man, test="Wilks") #every trait effect
+
+testInteractions(m.man, pairwise = "Range", test="Wilks")
+testInteractions(m.man, pairwise = "Range",slope="E_Latitudeabs", test="Wilks")
+```
+
+
+*Univariate phenotypic responses to range and latitude*
+---
+
+```{r}
+#maxHeight
+step(lmer(sqrt(T_maxHeight_cm)~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m<-(lmer(sqrt(T_maxHeight_cm) ~  E_Latitudeabs *Range + (1 | q), data = pc_meanC))
+visreg(m, by="Range", xvar="E_Latitudeabs", overlay=T)
+
+interactionMeans(m, factor="Range", slope = "E_Latitudeabs")
+testInteractions(m, pairwise = "Range", slope = "E_Latitudeabs")
+
+#test if most northern Australian plants differ significantly from the native range in size
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Australia")]))) #Lowest AU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Native")]))) #Lowest NA lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Australia")]))) #Highest AU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Europe")]))) #Lowest EU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Native")]))) #Highest NA lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Europe")]))) #Highest EU lat
+
+
+#Total biomass
+step(lmer(sqrt(T_tot_biom)~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m<- lmer(sqrt(T_tot_biom) ~  Range*E_Latitudeabs +I(E_Latitudeabs^2)+ (1 | q) , data = pc_meanC)
+interactionMeans(m, factor="Range", slope= "E_Latitudeabs")
+testInteractions(m, pairwise = "Range", slope = "E_Latitudeabs")
+
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Australia")]))) #Lowest AU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Native")]))) #Lowest NA lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Australia")]))) #Highest AU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Europe")]))) #Lowest EU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Native")]))) #Highest NA lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Europe")]))) #Highest EU lat
+
+
+#Max. growth rate
+step(lmer(T_MaxSlope_cm_Day~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), keep.effs="E_Latitudeabs",reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m = lmer((T_MaxSlope_cm_Day) ~Range+E_Latitudeabs+ (1|q), data = pc_meanC)
+testInteractions(m, "Range")
+
+
+#Flowering onset
+step(lmer(T_fl_start~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+Anova(lmer(T_fl_start~ Range+E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger", test.statistic = "F")
+Anova(lmer(T_fl_start~ Range+E_Latitudeabs+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger", test.statistic = "F")
+
+m <- lmer((T_fl_start)~ Range+E_Latitudeabs+ I(E_Latitudeabs^2) + (1 | q), data = pc_meanC)
+testInteractions(m,"Range")
+
+#Dichogamy
+step(lmer(sqrt(T_sexmismatch+60)~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+step(lmer(sqrt(T_sexmismatch+60)~ Range+E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m <- lmer(sqrt(T_sexmismatch+60) ~  E_Latitudeabs+Range +I(E_Latitudeabs^2)+ (1 | q), data = pc_meanC)
+testInteractions(m,"Range")
+
+
+#Floral sex allocation (female/male)
+step(lmer(log(T_sexrat_weight)~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m <- lmer(log(T_sexrat_weight) ~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1 | q)  , data = pc_meanC)
+s= interactionMeans(m)
+r= exp(s$`adjusted mean`)
+se=r= exp(s$`adjusted mean`)
+
+(r[1]-r[3])
+(r[2]-r[3])
+
+testInteractions(m,pairwise = "Range", slope = "E_Latitudeabs")
+
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Australia")]))) #Lowest AU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Native")]))) #Lowest NA lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Australia")]))) #Highest AU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Europe")]))) #Lowest EU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Native")]))) #Highest NA lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Europe")]))) #Highest EU lat
+
+#Weight per seed
+step(lmer(sqrt(T_seed_20)~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m <- lmer(sqrt(T_seed_20) ~ Range+ E_Latitudeabs +   I(E_Latitudeabs^2) + (1 | q),  data = pc_meanC)
+
+testInteractions(m,"Range")
+
+#Total reproductive biomass
+step(lmer((T_fit_all)~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+step(lmer((T_fit_all)~ Range+E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m <- lmer((T_fit_all)~ I(E_Latitudeabs^2)+Range+E_Latitudeabs+ (1|q), data = pc_meanC)
+testInteractions(m,"Range")
+
+
+#Relative reproductive biomass
+step(lmer((T_repal)~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m <- lmer((T_repal) ~ Range *E_Latitudeabs + (1 | q) ,data = pc_meanC)
+visreg(m, by="Range",xvar="E_Latitudeabs")
+
+testInteractions(m,pairwise = "Range", slope = "E_Latitudeabs")
+interactionMeans(m, factor="Range", slope = "E_Latitudeabs")
+
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Australia")]))) #Lowest AU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Native")]))) #Lowest NA lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Australia")]))) #Highest AU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=min(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Europe")]))) #Lowest EU lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Native")]))) #Highest NA lat
+testInteractions(m, pairwise = "Range", covariates = c(E_Latitudeabs=max(pc_mean$E_Latitudeabs[which(pc_mean$Range=="Europe")]))) #Highest EU lat
+
+
+#SLA
+step(lmer(sqrt(T_Sla)~ Range*E_Latitudeabs+I(E_Latitudeabs^2)+ (1|q) , data = pc_meanC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+m<- lmer(sqrt(T_Sla)~ Range+E_Latitudeabs+ (1 | q), data = pc_meanC)
+testInteractions(m, "Range")
+```
+
+
+*Height-flowering patterns*
+---
+
+Indivq as I testing the same populations
+
+```{r}
+##Plant height in relation to phenology
+step(lmer(T_fl_starttr~(T_maxHeight_cm_sq)*Range + (1|Pop) + (1|q), data=phentrC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+m <- lmer(T_fl_start~sqrt(T_maxHeight_cm)*Range + (1|Pop), data=phenC)
+visreg(m, xvar="T_maxHeight_cm", by= "Range" , partial=T, overlay=T, ylab="Start of flowering (days after T2)", xlab="Maximum height (mm)",cex.lab=1.5)
+interactionMeans(m, factor = "Range", slope="sqrt(T_maxHeight_cm)")
+testInteractions(m,slope="sqrt(T_maxHeight_cm)")
+
+##Plant height in relation to dichogamy
+phentrC$sm60lg <- log(phentrC$T_sexmismatch+60) #hack to be able to compare adjusted slopes. 
+step(lmer(sm60lg~(T_maxHeight_cm_sq)*Range+ (1|Pop) +(1|q), data=phentrC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+m <- lmer(log(T_sexmismatch+60)  ~ sqrt(T_maxHeight_cm)*Range + (1 | Pop),  data = phenC)
+visreg(m, xvar="T_maxHeight_cm", by= "Range",trans=function(x) exp(x)-60,partial=T, overlay=T, ylab="Dichogamy \n(days, female-male flowering)", xlab="Maximum height (mm)",cex.lab=1.5)
+interactionMeans(m,factor = "Range", slope="sqrt(T_maxHeight_cm)") #slopes in each range
+testInteractions(m, pairwise = "Range", slope="sqrt(T_maxHeight_cm)")
+
+##Plant height in relation to sex allocation
+step(lmer(T_sexrat_weight_lg~(T_maxHeight_cm_sq)*Range + (1|Pop) + (1|q), data=phentrC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+m <- lmer(log(T_sexrat_weight+1)~ sqrt(T_maxHeight_cm)*Range  + (1 | Pop), data = phenC)
+visreg(m, xvar="T_maxHeight_cm", by= "Range",partial=T, overlay=T, ylab="Sex allocation log(female/male biomass+1)", xlab="Maximum height (mm)",cex.lab=1.5)
+interactionMeans(m,factor = "Range", slope="sqrt(T_maxHeight_cm)") 
+testInteractions(m, pairwise = "Range", slope="sqrt(T_maxHeight_cm)")
+
+##Plant height in relation to seed weight
+step(lmer(T_seed_20_lg~(T_maxHeight_cm_sq)*Range + (1|Pop), data=phentrC), reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+m <- lmer(log(T_seed_20)~sqrt(T_maxHeight_cm)*Range + (1 | Pop), data = phenC)
+visreg(m, xvar="T_maxHeight_cm", by= "Range" , trans= function(x) x^2, partial=T, overlay=T, ylab="Seed weight", xlab="Maximum height (mm)")
+interactionMeans(m, factor = "Range", slope="sqrt(T_maxHeight_cm)") 
+testInteractions(m,pairwise="Range", slope="sqrt(T_maxHeight_cm)")# 
+```
+
+*Heterozygosity*
+---
+
+Heterozygosity-latitude relationship
+```{r}
+plot(pcho_mean$Ho~pcho_mean$E_Latitudeabs)
+Anova(lmer(Ho~Range*E_Latitudeabs+(1|q), data=pcho_mean),type=3)
+Anova(lm(Ho~Range*E_Latitudeabs, data=pcho_mean),type=3)
+Anova(lmer(Ho~Range*E_Latitudeabs+Range*I(E_Latitudeabs^2) + (1|q), data=pcho_mean),type=3)
+Anova(lmer(Ho~Range*E_Latitudeabs+I(E_Latitudeabs^2) + (1|q), data=pcho_mean),type=3)
+Anova(lmer(Ho~Range+E_Latitudeabs+I(E_Latitudeabs^2) + (1|q), data=pcho_mean),type=3)
+Anova(lmer(Ho~Range+E_Latitudeabs + (1|q), data=pcho_mean),type=3)
+Anova(lmer(Ho~Range + (1|q), data=pcho_mean),type=3)
+m <- lmer(Ho~Range + (1|q), data=pcho_mean)
+testInteractions(m)
+```
+
+
+Inluding latitude effect, testing on population means
+```{r}
+Anova(lmer(sqrt(T_shoot_biom)~ Ho*Range+E_Latitudeabs*Range +I(E_Latitudeabs^2)+ (1|q) , data = pcho_mean),type =3, ddf="Kenward-Roger", test.statistic = "F")
+Anova(lmer(sqrt(T_shoot_biom)~ Ho*Range+E_Latitudeabs +I(E_Latitudeabs^2)+ (1|q) , data = pcho_mean),type =3, ddf="Kenward-Roger", test.statistic = "F")
+Anova(lmer(sqrt(T_shoot_biom)~ Ho*Range+E_Latitudeabs + (1|q) , data = pcho_mean),type =3, ddf="Kenward-Roger", test.statistic = "F")
+
+m<-lmer(sqrt(T_tot_biom/1000)~ Ho*Range+E_Latitudeabs + (1|q) , data = pcho_mean)
+visreg(m, by="Range",xvar="Ho", overlay=T)
+plot(interactionMeans(m, factor="Range", slope="Ho"))
+testInteractions(m, pairwise = "Range", slope="Ho")
+m1<-lm(sqrt(T_tot_biom/1000)~ Ho*Range+E_Latitudeabs , data = pcho_mean)
+visreg(m1, by="Range",xvar="Ho", overlay=T,xlab="Observed heterozygosity", ylab="Total biomass (g)",  trans=function(x) x^2, partial=T)
+interactionMeans(m1, factor="Range", slope="Ho")
+testInteractions(m, pairwise = "Range", slope="Ho")
+
+plot(effect("Ho", m1, partial.residuals = TRUE))
+
+
+Anova(lmer(sqrt(T_tot_biom)~ Ho*Range+E_Latitudeabs*Range +I(E_Latitudeabs^2)+ (1|q) , data = pcho_mean),type =3, ddf="Kenward-Roger", test.statistic = "F")
+Anova(lmer(sqrt(T_tot_biom)~ Ho*Range+E_Latitudeabs +I(E_Latitudeabs^2)+ (1|q) , data = pcho_mean),type =3, ddf="Kenward-Roger", test.statistic = "F")
+Anova(lmer(sqrt(T_tot_biom)~ Ho*Range+E_Latitudeabs + (1|q) , data = pcho_mean),type =3, ddf="Kenward-Roger", test.statistic = "F")
+
+m<-lmer(sqrt(T_tot_biom/1000)~ Ho*Range+E_Latitudeabs + (1|q) , data = pcho_mean)
+visreg(m, by="Range",xvar="Ho", overlay=T)
+plot(interactionMeans(m, factor="Range", slope="Ho"))
+testInteractions(m, pairwise = "Range", slope="Ho")
+m1<-lm(sqrt(T_tot_biom/1000)~ Ho*Range+E_Latitudeabs , data = pcho_mean)
+visreg(m1, by="Range",xvar="Ho", overlay=T,xlab="Observed heterozygosity", ylab="Total biomass (g)",  trans=function(x) x^2, partial=T)
+interactionMeans(m1, factor="Range", slope="Ho")
+testInteractions(m, pairwise = "Range", slope="Ho")
+
+plot(effect("Ho", m1, partial.residuals = TRUE))
+
+step(lmer(sqrt(T_fit_all) ~ Ho*Range+E_Latitudeabs*Range +I(E_Latitudeabs^2)+ (1|q), data= pcho_mean),  keep.effs="Ho", reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+
+step(lmer(log(T_seed_20) ~ Ho*Range+E_Latitudeabs*Range+I(E_Latitudeabs^2) + (1|q), data= pcho_mean),  keep.effs="Ho", reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+m<-lmer(log(T_seed_20)~ Ho+E_Latitudeabs+Range+I(E_Latitudeabs^2)  + (1|q) , data = pcho_mean)
+visreg(m, by="Range",xvar="Ho", overlay=T)
+interactionMeans(m, slope="Ho" )
+
+m1<-lm(log(T_seed_20)~ Ho+E_Latitudeabs*Range , data = pcho_mean)
+visreg(m1, by="Range",xvar="Ho", overlay=T)
+interactionMeans(m1, slope="Ho" )
+
+Anova(lmer(log(T_seed_20) ~ Ho+E_Latitudeabs+Range +I(E_Latitudeabs^2)+ (1|q) , data = pcho_mean),type =3, ddf="Kenward-Roger", test.statistic = "F")
+
+
+step(lmer(log(T_sexmismatch+60) ~ Ho*Range+E_Latitudeabs*Range+I(E_Latitudeabs^2) + (1|q), data= pcho_mean),  keep.effs="Ho", reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+step(lmer(log(T_sexrat_weight+1) ~ Ho*Range+E_Latitudeabs*Range +I(E_Latitudeabs^2)+ (1|q), data= pcho_mean),  keep.effs="Ho", reduce.fixed = TRUE, reduce.random = FALSE, alpha.fixed = 0.05,type =3, ddf="Kenward-Roger")
+
+tpm =read.table("tmp.txt")
+tpm2= p.adjust(tpm$V1, method = "fdr")
+write.table(tpm2, "tmp2.txt")
+```
+
+
+**END SCRIPT**
+===

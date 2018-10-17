@@ -1,0 +1,210 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+**Step 0) Data Manipulation**
+*a) Load libraries* IMPORTANT --> DO NOT SKIP
+---
+```{r, include=F}
+library(dplyr)
+library(plyr)
+library(vegan)
+library(usdm)
+library(ggfortify)
+library(ggplot2)
+library(nlme)
+library(lmerTest)
+library(lme4)
+library(mvpart) # for MRT, package needs to be installed from github using devtools::install_github("cran/mvpart")
+library(visreg)
+library(gridExtra)
+library(multcomp)
+library(phia)
+library(Hmisc) # for rcorr
+
+```
+
+
+*Load data* IMPORTANT --> DO NOT SKIP
+---
+```{r}
+phen <- read.table("phen.txt", header=T)
+pc_mean <-read.table("pc_mean.txt", header=T)
+clim = read.table("clim.txt", header=T)
+```
+
+*Create subsets* IMPORTANT --> DO NOT SKIP
+---
+```{r}
+# individual trait data per Treatment
+phenC <- phen[which(phen$Treatment == 'C'),]
+phenD <- phen[which(phen$Treatment == 'D'),]
+
+phen_mean_C <- phen_mean[which(phen_mean$Treatment=="C"),]
+phen_mean_D <- phen_mean[which(phen_mean$Treatment=="D"),]
+
+# individual trait data per Treatment per continent
+phenC_NA <- phenC[which(phenC$Range == 'Native'),]
+phenC_EU <- phenC[which(phenC$Range == 'Europe'),]
+phenC_AU <- phenC[which(phenC$Range == 'Australia'),]
+phenD_NA <- phenC[which(phenD$Range == 'Native'),]
+phenD_EU <- phenC[which(phenD$Range == 'Europe'),]
+phenD_AU <- phenC[which(phenD$Range == 'Australia'),]
+
+pc_mean_C <- pc_mean[which(pc_mean$Treatment=="C"),]
+pc_mean_D <- pc_mean[which(pc_mean$Treatment=="D"),]
+```
+  
+**2) Trait correlation matrices** CHECK COLUMNS INCLUDED BEFORE RUNNING
+*a) Calculate correlations between all variables*
+---
+
+Function to transform rcorr output
+```{r}
+# function to flatten rcorr matrix
+flattenCorrMatrix <- function(cormat, pmat) {
+  ut <- upper.tri(cormat)
+  data.frame(
+    row = rownames(cormat)[row(cormat)[ut]],
+    column = rownames(cormat)[col(cormat)[ut]],
+    cor  =(cormat)[ut],
+    p = pmat[ut]
+    )
+}
+```
+
+Using Bonferroni correction to account for multiple comparisons (multiplies p-val times number of comparisons made). Use data without transformed variables as Spearman's correlation test doesn't need it
+```{r}
+#All, Control treatment
+pc_mean_sub <- pc_mean[3:36]
+corrs <- rcorr(as.matrix(pc_mean_sub), type="spearman")
+
+corrs_r <- data.frame(corrs$r)
+corrs_p <- data.frame(corrs$P)
+corrs_pbonf <- data.frame(corrs$p_bonf)
+corr <- flattenCorrMatrix(corrs_r,corrs_p)
+corr$p_bonf <- p.adjust(corr$p, method= "bonferroni")
+write.table(corr, "correlations_all_phenmean.txt")  
+```  
+  
+```{r}
+clim_sub = pc_mean[48:69]
+corrs <- rcorr(as.matrix(clim_sub), type="spearman")
+
+corrs_r <- data.frame(corrs$r)
+corrs_p <- data.frame(corrs$P)
+corrs_pbonf <- data.frame(corrs$p_bonf)
+corr <- flattenCorrMatrix(corrs_r,corrs_p)
+corr$p_bonf <- p.adjust(corr$p, method= "bonferroni")
+write.table(corr, "correlations_all_clim.txt")  
+```
+
+*Calculate PCA for clim*
+---
+```{r}
+colnames(clim) <- gsub("_all","",colnames(clim))
+colnames(clim) <- gsub("E_","",colnames(clim))
+colnames(clim) <- gsub("Latitudeabs","Lat",colnames(clim))
+colnames(clim) <- gsub("Longitude","Long",colnames(clim))
+colnames(clim) <- gsub("alt","Alt",colnames(clim))
+
+colnames(pc_mean_C) <- gsub("_all","",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("E_","",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("Latitudeabs","Lat",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("Longitude","Long",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("alt","Alt",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio10","TQwarm",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio11","TQcold",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio12","Pmean",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio13","Pmax",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio14","Pmin",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio15","Pseas",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio16","PmaxQ",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio17","PminQ",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio18","PQwarm",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio19","PQcold",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio1","Tmean",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio2","Tdiur",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio3","Tiso",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio4","Tseas",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio5","Tmax",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio6","Tmin",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio7","Trange",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio8","TQwet",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("bio9","TQdry",colnames(pc_mean_C))
+
+```
+
+```{r}
+clim[,c(3:4,6:25)] = apply(clim[,c(3:4,6:25)], 2, function(x) as.numeric(as.character(x)));
+
+clim_pca<- prcomp(clim[c(3:4,6:25)], scale=T)
+
+autoplot(clim_pca, data=clim[c(2:4,6:25)], colour="Range", loadings=T, loadings.label=T, shape=F, label.label="Pop", loadings.label.size=4)+ theme_minimal()  
+
+pdf("_Graph/PCA_clim.pdf", height=6, width=8)
+autoplot(clim_pca, data=clim[c(2:4,6:25)], colour="Range", loadings=T, loadings.label=T, shape="Range", loadings.label.size=4, loadings.label.repel=T, loadings.label.colour='black')+ theme_minimal() + scale_shape_manual(values=c(19,15,17))
+dev.off()
+
+aload <- abs(clim_pca$rotation)
+sweep(aload, 2, colSums(aload), "/")
+
+climsel_pca <- prcomp(wisconsin(pc_mean_C[c(48:49,55,57,62,64:65)]+500), scale=T)
+autoplot(climsel_pca, data=pc_mean_C, colour="Range", loadings=T, loadings.label=T, shape=F, label.label="Pop", loadings.label.size=4)+ theme_minimal()  
+
+pdf("_Graph/PCA_topPEA.pdf", height=6, width=8)
+autoplot(climsel_pca, data=pc_mean_C, colour="Range", loadings=T, loadings.label=T, shape="Range", loadings.label.size=4, loadings.label.repel=T, loadings.label.colour='black')+ theme_minimal() + scale_shape_manual(values=c(19,15,17))
+dev.off()
+aload <- abs(climsel_pca$rotation)
+sweep(aload, 2, colSums(aload), "/")
+summary(climsel_pca)
+```
+
+*d)	Calculate final PC for traits**
+---
+```{r}
+colnames(pc_mean_C) <- gsub("T_tot_biom","Biom",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_Branches","Branch",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_maxHeight_cm","Height",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_rootshoot_rat","RS",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_Sla","SLA",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_Stem_width_mum","Stem",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_sexmismatch","Dich",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_sexrat_weight","Sex",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_fl_start","Flow",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_MaxSlope_cm_Day","Grow",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_InflxPt_Day","Half",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_fit_all","Fit",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_male_weight","Male",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_repal","Rfit",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_seed_weight_tot","Seed",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("T_seed_20","Ssize",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("PeakArea","Area",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("Peaks","Peaks",colnames(pc_mean_C))
+colnames(pc_mean_C) <- gsub("Trichome","Trich",colnames(pc_mean_C))
+```
+
+
+```{r}
+phen_pca <- prcomp(na.omit(pc_mean_C[c(13,17:19,21:24,26:27)]+100), scale=T) 
+
+aload <- abs(phen_pca$rotation)
+sweep(aload, 2, colSums(aload), "/")
+
+pdf("_Graph/PCA_traits.pdf", height=6, width=8)
+autoplot(phen_pca, na.omit(pc_mean_C[c(6,1:13,17:19,21:28,35,45:47)]), colour="Range", loadings=T, loadings.label=T, shape="Range", loadings.label.size=4, loadings.label.repel=T, loadings.label.colour='black')+ theme_minimal() + scale_shape_manual(values=c(19,15,17))
+dev.off()
+
+phen_pcasub <- prcomp(na.omit(pc_mean_C[c(6,11,17:19,24,26,28,47)]+100), scale=T) 
+
+pdf("_Graph/PCA_topPEAtraits.pdf", height=6, width=8)
+autoplot(phen_pcasub, na.omit(pc_mean_C[c(6,11,17:19,24,26,28,47)]), colour="Range", loadings=T, loadings.label=T, shape="Range", loadings.label.size=4, loadings.label.repel=T, loadings.label.colour='black')+ theme_minimal() + scale_shape_manual(values=c(19,15,17))
+dev.off()
+aload <- abs(phen_pcasub$rotation)
+sweep(aload, 2, colSums(aload), "/")
+```
+
+**END SCRIPT**
+===

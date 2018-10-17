@@ -1,0 +1,179 @@
+Growth measurements
+===
+
+# Aim is to produce estimate of 12 growth parameters:
+#   - Maximum growth rate                       (MaxSlope_cm_Day)
+#   - Budbreak day                              (Growth5pct_Day)
+#   - Height at 5% growth i.e. Budbreak,        (Growth5pct_cm)
+#   - Budset day                                (Growth95pct_Day)
+#   - Height at 95% growth i.e. Budset,         (Growth95pct_cm)
+#   - Length of growing period                  (Growth5-95pct_Days)
+#   - Height gain during growing period         (Growth5-95pct_cm)
+#   - Day that maximum growth rate starts       (LinGrStart_Day)
+#   - Day that maximum growth rate ceases       (LinGrEnd_Day)
+#   - Duration of maximum growth rate           (LinearGrowth_Days)
+#   - Day at which half annual growth occurs    (InflxPt_Day)
+#   - Height attained at half annual growth     (InflxPt_Ht_cm)
+
+
+```{r, include=F}
+library("knitr")
+library(ggplot2)
+opts_knit$set(root.dir = '/Users/lottevanboheemen/Documents/Monash/PhD/Analyses/Data')
+```
+
+```{r}
+gro <- read.table("growth.txt", header =T)
+
+gro$Height <- as.numeric(gro$Height)
+gro$Day <- as.numeric(gro$Day)
+Indivno. = levels(gro[,2]) # Create a list of unique individual numbers
+```
+
+---
+
+```{r}
+ggplot(gro,aes(x= Date,y= Height,colour=Treatment,group=Treatment)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "smooth") + theme_bw() # per treatment (C = Control, D = Drought), averaged per day
+
+ggplot(gro, aes(x = Week, y = Height)) + stat_summary(fun.data = "mean_cl_boot", geom = "smooth") + theme_bw() # Averaged per week
+
+ggplot(gro,aes(x= Week,y= Height,colour=Treatment,group=Treatment)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "smooth") + theme_bw() # per treatment (C = Control, D = Drought), averaged per week
+
+ggplot(gro,aes(x= Round,y= Height,colour=Treatment,group=Treatment)) +
+  stat_summary(fun.data = "mean_cl_boot", geom = "smooth") + theme_bw() # per treatment (C = Control, D = Drought), averaged per measurement round. Round 10 is the final measurement for each plant
+```
+
+---
+
+```{r}
+IndivModOut = as.data.frame(matrix(nrow = length(Indivno.), ncol = 32)) # Create a dataframes for the model outputs
+                 
+# Column names for the IndivModOut which is a dataframe of all the predicted values and outputs extracted from the model
+ModOutColnames = c("SampleID", "T_minHeight_cm", "T_maxHeight_cm", "T_coef_a", "T_coef_b", "T_coef_c", "T_coef_d", "StdErr_a", "StdErr_b", "StdErr_c", "StdErr_d", "t-value_a", "t-value_b", "t-value_c", "t-value_d", "p-value_a", "p-value_b", "p-value_c", "p-value_d", "T_pseudo_Rsq", "T_MaxSlope_cm_Day", "T_InflxPt_Day", "T_InflxPt_Ht_cm", "T_LinGrStart_Day", "T_LinGrEnd_Day", "T_LinearGrowth_Days", "T_Growth5pct_cm",  "T_Growth5pct_Day", "T_Growth95pct_cm", "T_Growth95pct_Day", 'T_Growth5-95pct_cm', 'T_Growth5-95pct_Days')
+colnames(IndivModOut) = ModOutColnames
+
+ModFail = as.data.frame(matrix(nrow = 0, ncol = 3)) # A dataframe to record the models that fail
+colnames(ModFail) = c("SampleID", "minHeight","maxHeight") # Column names for ModFail
+
+# Functions for calculating slope, tangent and line of the model
+ModCurve = function (Day) {a + (b/(1 + (exp(-c*(Day-d)))))}
+Tangent = D (expression (a + (b/(1 + (exp(-c*(Day-d)))))),"Day") # Obtain the 1st derivative of the model (Tangent)
+Tangent = function (Day){b * (exp(-c * (Day - d)) * c)/(1 + (exp(-c * (Day - d))))^2} # Function using the 1st derivative to give curve tangent
+TangentLine <- function (Day){Intercept + (SlopeMax * Day)} ### Write function to calculate the Tangent value on any given day
+
+# Loop to run the model and store the outputs in either IndivModOut or ModFail dataframes
+
+for (i in 1:length(Indivno.)) {
+  
+    Indiv = subset (gro, SampleID == Indivno.[[i]]) # create a subset of data and write as a dataframe
+    
+    x = min(Indiv[,5], na.rm = TRUE) # set x as minimum height of individual [i]
+    y = max(Indiv[,5], na.rm = TRUE) -  min(Indiv[,5], na.rm = TRUE) # set y as the annual height increment if individual [i]
+    # c = component of growth rate. This might need tweaking
+    # d = the day that half of the annual height growth increment is completed
+    #  Values of c and d here will probably work to start with, but can then be calculated from IndivModOut and used as new starting parameters
+    # NB.Cannot use 'na.omit(Indiv)' to accommodate NA height values because it confuses all the indexing below. - Use 'na.rm = TRUE' al ot instead
+    
+    # The model!!!!!
+    Indiv_mod <- try(nls(Height ~ a + (b/(1 + (exp(-c*(Day-d))))), data = Indiv, start = list(a = x, b = y, c = 0.05, d = 100), nls.control (maxiter = 1000, tol = 1e-05),na.action = na.exclude)) # The 'try' wrapper allows loop to continue if the model fails
+
+    if (class(Indiv_mod)!="nls"){ # use 'if' function to write details of failed model to ModFail dataframe
+    # next four lines are just entering info as place holders in the IndivModOut dataframe
+    IndivModOut[,1] = Indivno. # write seedling number to IndivModOut dataframe
+    IndivModOut[i,2] = min(Indiv[,5], na.rm = TRUE)
+    IndivModOut[i,3] = max(Indiv[,5], na.rm = TRUE)
+    IndivModOut[i,4:32] = NA # fill remainder of row with NA's
+    ModFail[i,1] = Indiv[1,2] # write seedling number to ModFail dataframe
+    ModFail[i,2] = min(Indiv$Height, na.rm = TRUE)
+    ModFail[i,3] = max(Indiv$Height, na.rm = TRUE)
+    }
+    
+    else { # Use 'else' function to write details of successful model to IndivModOut dataframe
+    IndivModOut[i,1] = Indiv[1,2] # write seedling number to IndivModOut dataframe
+    IndivModOut[i,2] = min(Indiv$Height, na.rm = TRUE)
+    IndivModOut[i,3] = max(Indiv$Height, na.rm = TRUE)
+   # IndivModOut[i,4:23] = predict(Indiv_mod) # write predicted height values to IndivModOut
+    IndivModOut[i,4:7] = coef(Indiv_mod)# write model parameters to IndivModOut
+    IndivModOut[i,8:11] = summary(Indiv_mod)$coefficients[,2] # write parameters standard errors to IndivModOut
+    IndivModOut[i,12:15] = summary(Indiv_mod)$coefficients[,3] # write parameters t-values to IndivModOut
+    IndivModOut[i,16:19] = summary(Indiv_mod)$coefficients[,4] # write parameters p-values to IndivModOut
+    SSresid = sum(resid(Indiv_mod)^2, na.rm = TRUE) # obtains SSres for the model
+    SSy = var(Indiv$Height, na.rm = TRUE) # Obtain SSy for the height data
+    R_sq = ((SSy - SSresid)/SSy)# Calculate pseudo R^2 for the model
+    IndivModOut[i,20] = R_sq # write pseudo R^2 to the IndivModOut dataframe
+    
+    a = coef(Indiv_mod)[[1]] # assign the parameters to letters for use in functions
+    b = coef(Indiv_mod)[[2]]
+    c = coef(Indiv_mod)[[3]]
+    d = coef(Indiv_mod)[[4]]
+  
+    Day0 = 0 # time at start of growth
+    DayMax = Indiv$Day[which.max(Indiv$Height)] # Day when plant was tallest
+          
+    InflxPt = optimize(Tangent, c(0, DayMax), tol = 0.0001, maximum = TRUE) # use the optimise function to estimate the curves' inflection point
+    SlopeMax = InflxPt[[2]] # Write the inflection point as the maximum slope of the curve for use below
+    IndivModOut[i,21] = SlopeMax # Extract the maximum slope (i.e. tangent) of the curve
+    IndivModOut [i,22] = InflxPt[[1]] # Extract the day that inflection point occurs
+    
+    InflxPt_Ht  = predict(Indiv_mod, list(Day = InflxPt[[1]])) # Extract the height of the seedling at the inflection point 
+    IndivModOut[i,23] = InflxPt_Ht # write the inflection point to IndivModOut
+    Intercept = InflxPt_Ht - (SlopeMax * InflxPt[[1]]) # Calculate intercept of the max slope
+    
+
+    
+    diff_left = abs(ModCurve(Day0) - (TangentLine(Day0))) # calculate difference between start of curve and tangent line
+    
+    diff_right = abs(ModCurve(DayMax) - (TangentLine(DayMax))) # calculate the difference between end of curve and tangent line
+    
+    while (diff_left > 0.05) {Day0 = Day0 + 0.1 # While loop to iterate until diff_left is > 0.05 i.e. 0.5mm finding lower limit of linear growth
+                              diff_left=abs(ModCurve(Day0)-TangentLine(Day0))}
+    
+    while (diff_right > 0.05) {DayMax=DayMax - 0.1 # While loop to iterate until diff_left is > 0.05 i.e. 0.5mm finding upper limit of linear growth
+                               diff_right=abs(ModCurve(DayMax)-TangentLine(DayMax))}
+    IndivModOut[i,24] = Day0 # Write Day that linear growth starts to IndivModOut
+    IndivModOut[i,25] = DayMax # Write Day that linear growth ends to IndivModOut
+    IndivModOut[i,26] = DayMax - Day0 # Write duration of the linear growth period to IndivModOut
+    
+    Day0 = 0 # Re-set time at start of growth
+    DayMax = Indiv$Day[which.max(Indiv$Height)] # Re-set day at end of growth
+    
+    # Calculate the height when 5% of the annual growth increment was achieved, and the day
+    y_hat = (predict(Indiv_mod))[-1] # remove the first predicted model values so that min y_hat is at day 76 to speed up loop
+    y_hat = y_hat[!is.na(y_hat)] # Drop NA values to avoid confusing Min and Max calculation below
+    Y5pct = ((max(y_hat) - min(y_hat))*0.05) + min (y_hat) # 5% growth calculated from actual Height
+    IndivModOut[i,27] = Y5pct # write the height after 5% growth to IndivModOut
+    while (ModCurve (Day0) < Y5pct) {Day0 = Day0 + 0.1} # gives point where 5% of growth is completed
+    IndivModOut[i,28] = Day0 # At this point Day 0 = day at which 5% or growth has occurred. Write to IndivModOut
+    
+    # Calculate the height when 95% of the annual growth increment was achieved, and the day
+    Y95pct = ((max(y_hat) - min(y_hat))*0.95) + min (y_hat) # 95% growth calculated from actual Height_cm
+    IndivModOut[i,29] = Y95pct # write height after % growth to IndivModOut
+    while (ModCurve (DayMax) > Y95pct) {DayMax = DayMax - 0.1} # gives point where 95% of growth is completed
+    IndivModOut[i,30] = DayMax # At this point Day 197 = day at which 95% or growth has occurred. Write to IndivModOut
+    IndivModOut[i,31] = Y95pct - Y5pct # Extract the height growth increment between 5 and 95% annual growth. Write to IndivModOut
+    IndivModOut[i,32] = DayMax - Day0 # Extract the duration of growth period between 5 and 95% growth. Write to IndivModOut    
+    
+    }
+} ### END LOOP HERE
+
+#### 6) - Summarise individual model outputs and write to file
+
+ModFail = na.omit(ModFail) # Remove rows with NA to leave only failed models
+IndivModSummary = as.data.frame(matrix(nrow = 4, ncol = 31)) # Create empty dataframe to put summary stats in
+row.names(IndivModSummary) = c("Min", "Max", "Mean", "Median") # rename rows
+colnames(IndivModSummary) = ModOutColnames[-1] # renames columns
+
+IndivModSummary [1,1:31] = sapply(IndivModOut[,2:32], min, na.rm = TRUE) # calculate mean of individual output values 
+IndivModSummary [2,1:31] = sapply(IndivModOut[,2:32], max, na.rm = TRUE) # calculate min of individual output values
+IndivModSummary [3,1:31] = sapply(IndivModOut[,2:32], mean, na.rm = TRUE) #calculate max of individual output values
+IndivModSummary [4,1:31] = sapply(IndivModOut[,2:32], median, na.rm = TRUE) #calculate max of individual output values
+IndivModSummary = round(IndivModSummary, digits = 3) # round summary dataframe to 4 digits
+
+write.csv (IndivModOut, "IndivModOut_161210.csv", row.names = FALSE)
+write.csv (ModFail, "ModFail_161210.csv", row.names = FALSE)
+```
+
+**END SCRIPT**
+===

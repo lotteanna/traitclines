@@ -1,0 +1,430 @@
+---
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+ 
+ 
+*Load libraries* IMPORTANT --> DO NOT SKIP
+---
+```{r, include=F}
+library(knitr)
+library(dplyr)
+library(plyr)
+library(vegan)
+library(usdm)
+library(ggfortify)
+library(nlme)
+library(lmerTest)
+library(lmtest)
+library(lme4)
+library(mvpart) # for MRT, package needs to be installed from github using devtools::install_github("cran/mvpart")
+library(visreg)
+library(gridExtra)
+library(multcomp) #glht
+library(phia) #testInteractions
+library(ape) #varcomp
+library(Hmisc) # for rcorr
+library(merTools)
+opts_knit$set(root.dir = '/Users/lottevanboheemen/Documents/Monash/PhD/Analyses/Data', warning=FALSE, message=T)
+```
+
+*Load data* IMPORTANT --> DO NOT SKIP
+---
+```{r}
+phen <- read.table("phen.txt", header=T) #non-transformed individual traits
+pc_mean <-read.table("pc_mean.txt", header=T) #population mean traits + bioclimatic variables
+phen_ho <- read.table("phen_ho.txt", header=T) #non-transformed individual trait values including individually calculated heterozygosity (#heterozygote/#total called genotypes)
+pcho_mean<- read.table("pcho_mean.txt",header=T)
+climfile <- read.table("clim.txt", header=T)
+phencl <-  read.table("phencl.txt", header=T)
+```
+
+*Create subsets* IMPORTANT --> DO NOT SKIP
+---
+```{r}
+pc_mean_NA <- pc_mean[which(pc_mean$Range == 'Native'),]
+pc_mean_EU <- pc_mean[which(pc_mean$Range == 'Europe'),]
+pc_mean_AU <- pc_mean[which(pc_mean$Range == 'Australia'),]
+
+phencl_NA <- phencl[which(phencl$Range == 'Native'),]
+phencl_EU <- phencl[which(phencl$Range == 'Europe'),]
+phencl_AU <- phencl[which(phencl$Range == 'Australia'),]
+
+phenclho <- left_join(phen_ho, climfile, by="Pop")
+phenclho_NA <- phenclho[which(phenclho$Range.x == 'Native'),]
+phenclho_EU <- phenclho[which(phenclho$Range.x == 'Europe'),]
+phenclho_AU <- phenclho[which(phenclho$Range.x == 'Australia'),]
+
+pcho_NA <- pcho_mean[which(pcho_mean$Range == 'Native'),]
+pcho_EU <- pcho_mean[which(pcho_mean$Range == 'Europe'),]
+pcho_AU <- pcho_mean[which(pcho_mean$Range == 'Australia'),]
+```
+
+  
+*Univariate phenotypic responses to treatment, continent and latitude *
+---
+
+```{r}
+#Max height
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_maxHeight_cm","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm(sqrt(T_maxHeight_cm)~ E_Latitudeabs *Range, data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- fitted^2
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_height_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_maxHeight_cm, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("Max height (cm)")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) +
+  scale_y_continuous(breaks=seq(0,150,by=50), limits = c(20,175))
+dev.off()
+
+#Total biomass
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_tot_biom","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm(log(T_tot_biom)~ E_Latitudeabs *Range + I(E_Latitudeabs^2), data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- exp(fitted)
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_biom_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_tot_biom, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) +
+  scale_y_sqrt()
+dev.off()
+
+#Growth
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_MaxSlope_cm_Day","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm(sqrt(T_MaxSlope_cm_Day)~ E_Latitudeabs +Range, data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- (fitted)^2
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_gro_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_MaxSlope_cm_Day, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) +
+  scale_y_sqrt()
+dev.off()
+
+#Flowering
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_fl_start","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm((T_fl_start)~ E_Latitudeabs +Range+ I(E_Latitudeabs^2), data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- (fitted)
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_flow_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_fl_start, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) 
+dev.off()
+
+
+#T_sexmismatch
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_sexmismatch","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm(sqrt(T_sexmismatch+60)~ E_Latitudeabs +Range+ I(E_Latitudeabs^2), data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- (fitted)^2 -60
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_dich_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_sexmismatch, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) 
+
+dev.off()
+
+
+#T_sexrat_weight
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_sexrat_weight","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm(log(T_sexrat_weight)~ E_Latitudeabs *Range+ I(E_Latitudeabs^2), data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- exp(fitted)
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_sex_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_sexrat_weight, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) +
+   coord_trans(y = scales::log1p_trans())+ 
+  scale_y_continuous(breaks= c(1,5,25,75))
+
+dev.off()
+
+
+#T_seed_20
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_seed_20","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm(sqrt(T_seed_20)~ E_Latitudeabs +Range+ I(E_Latitudeabs^2), data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- (fitted)^2
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_seedw_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_seed_20, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) +
+   scale_y_sqrt()
+
+dev.off()
+
+
+#T_fit_all
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_fit_all","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm((T_fit_all)~ E_Latitudeabs +Range+ I(E_Latitudeabs^2), data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- (fitted)
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_fit_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_fit_all, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) 
+
+dev.off()
+
+#T_repal
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_repal","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm((T_repal)~ E_Latitudeabs*Range+ I(E_Latitudeabs^2), data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- (fitted)
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_repal_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_repal, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) 
+
+dev.off()
+
+#T_Sla
+pc_meandummy<- pc_meanC[ ,which(names(pc_meanC) %in% c("T_Sla","E_Latitudeabs","Range","q"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+
+mod<- lm(sqrt(T_Sla)~ E_Latitudeabs+Range, data = pc_meandummy)
+fitted <- predict(mod, interval="confidence")
+fitted2 <- (fitted)^2
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/lat_sla_resub.pdf", height=2.5, width=3.5)
+ggplot(pc_meandummy,aes(x=E_Latitudeabs, y=T_Sla, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +
+  scale_shape_manual(values=c(21,22,24))+ 
+  theme_bw()+  ylab("biom")+ xlab("Absolute latitude") +
+  theme(panel.grid.minor = element_blank(),legend.position = "none")+ 
+  geom_line(data=pc_meandummy, aes(y=fit)) + 
+  geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)), alpha=0.3, lty=0) 
+
+dev.off()
+```
+
+
+
+
+*Trade-offs*
+---
+
+Height-trait associations, C only
+```{r}
+#flo~height
+pc_meandummy<- phenC[ ,which(names(phenC) %in% c("T_fl_start","T_maxHeight_cm","Range"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+mod <- lm(T_fl_start~sqrt(T_maxHeight_cm)*Range , data = phenC)
+
+fitted <- predict(mod, interval="confidence")
+pc_meandummy<-cbind(pc_meandummy,fitted)
+
+pdf("_Graph/flowheight_popC.pdf",height=4,width = 4)
+ggplot(pc_meanC,aes(x=T_maxHeight_cm, y=T_fl_start, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range)))+
+  geom_point(size=2) +  scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Flowering onset (days since T2)")+  xlab("Max. height (cm)") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)
+dev.off()
+
+pdf("_Graph/flowheight_indC.pdf",height=4,width = 4)
+ggplot(pc_meanC,aes(x=T_maxHeight_cm, y=T_fl_start, color=factor(Range), shape=factor(Range))) +
+   geom_point(data=pc_meandummy,size=1, aes(x=T_maxHeight_cm, y=T_fl_start), alpha=0.6)+
+ scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Flowering onset (days since T2)")+  xlab("Max. height (cm)") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)
+dev.off()
+
+#dichogamy~height
+pc_meandummy<- phenC[ ,which(names(phenC) %in% c("T_sexmismatch","T_maxHeight_cm","Range"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+mod <- lm(log(T_sexmismatch+60)  ~ sqrt(T_maxHeight_cm)*Range, data = phenC)
+visreg(mod, by="Range", xvar="T_maxHeight_cm")
+fitted <- predict(mod, interval="confidence")
+fitted2 <- exp(fitted)-60
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/dichheight_popC.pdf",height=4,width = 4)
+ggplot(pc_meanC,aes(x=T_maxHeight_cm, y=T_sexmismatch, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range)))+
+  geom_point(size=2) +  scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Dichogamy (male - female\n function flowering onset (days after T2))")+  xlab("Max. height (cm)") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)+ scale_y_continuous(limits=c(-30,50))
+dev.off()
+
+pdf("_Graph/dichheight_indsC.pdf",height=4,width = 4)
+ggplot(pc_meanC,aes(x=T_maxHeight_cm, y=T_sexmismatch, color=factor(Range), shape=factor(Range))) +
+ # geom_point(size=2, aes(fill=factor(Range)))+
+  geom_point(data=pc_meandummy,size=1, aes(x=T_maxHeight_cm, y=T_sexmismatch), alpha=0.6)+
+ scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Dichogamy (male - female\n function flowering onset (days after T2))")+  xlab("Max. height (cm)") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)+ scale_y_continuous(limits=c(-30,103))
+dev.off()
+
+##sexratio~height
+pc_meandummy<- phenC[ ,which(names(phenC) %in% c("T_sexrat_weight","T_maxHeight_cm","Range"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+mod <- lm(log(T_sexrat_weight+1)~ sqrt(T_maxHeight_cm)*Range, data = phenC)
+
+fitted <- predict(mod, interval="confidence")
+fitted2 <- exp(fitted)-1
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/sexheight_popC.pdf",height=4,width = 4)
+ggplot(pc_meanC,aes(x=T_maxHeight_cm, y=(T_sexrat_weight), color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range)))+
+  geom_point(size=2) +  scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Sex allocation log(female/male+1)")+  xlab("Max. height (cm)") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)+scale_y_sqrt(limits=c(0.0001,40))+ geom_hline(yintercept=1)
+dev.off()
+
+pdf("_Graph/sexheight_indC.pdf",height=4,width = 4)
+ggplot(pc_meanC,aes(x=T_maxHeight_cm, y=(T_sexrat_weight), color=factor(Range), shape=factor(Range))) +
+  #geom_point(size=2, aes(fill=factor(Range)))+
+    geom_point(data=pc_meandummy,size=1, aes(x=T_maxHeight_cm, y=T_sexrat_weight), alpha=0.6)+
+   scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Sex allocation log(female/male+1)")+  xlab("Max. height (cm)") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)+scale_y_sqrt(limits=c(0.0001,300))+ geom_hline(yintercept=1)
+dev.off()
+
+
+#seed20~height
+pc_meandummy<- phenC[ ,which(names(phenC) %in% c("T_seed_20","T_maxHeight_cm","Range"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+mod <- lm(log(T_seed_20/20)~sqrt(T_maxHeight_cm)*Range, data = phenC)
+
+fitted <- predict(mod, interval="confidence")
+fitted2 <- exp(fitted)
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/seedwheight_popC.pdf",height=4,width = 4)
+ggplot(pc_meanC,aes(x=T_maxHeight_cm, y=T_seed_20/20, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range)))+
+  geom_point(size=2) +  scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Weight per seed (mg)")+  xlab("Max. height (cm)") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)+scale_y_continuous(limits=c(0,6))
+dev.off()
+```
+
+*Heterozygosity*
+---
+
+```{r}
+##biomass
+pc_meandummy<- pcho_mean[ ,which(names(pcho_mean) %in% c("T_tot_biom","Ho","E_Latitudeabs","Range"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+#predict the model for a mean latitude as latitude has an additive effect
+pc_meandummy$E_Latitudeabs<- mean(pc_meandummy$E_Latitudeabs)
+mod<-lm(sqrt(T_tot_biom/1000)~ Ho*Range+E_Latitudeabs , data = pc_meandummy)
+
+fitted <- predict(mod, interval="confidence")
+fitted2 <- fitted^2
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/_Greenhouse/biomho.pdf",height=4,width = 4)
+ggplot(pc_meandummy,aes(x=Ho,y=T_tot_biom/1000, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range)))+  geom_point(size=2) +  scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Total biomass (g)")+  xlab("Observed heterozygosity") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)
+dev.off()
+
+##Weight per seed
+pc_meandummy<- pcho_mean[ ,which(names(pcho_mean) %in% c("T_seed_20","Pop","Ho","E_Latitudeabs","Range"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+#predict the model for a mean latitude as latitude has an additive effect
+pc_meandummy$E_Latitudeabs<- mean(pc_meandummy$E_Latitudeabs)
+mod<-lm(log(T_seed_20/20)~ Ho*Range+E_Latitudeabs*Range+I(E_Latitudeabs^2), data = pc_meandummy)
+
+fitted <- predict(mod, interval="confidence")
+fitted2 <- exp(fitted)
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/seedweightho.pdf",height=4,width = 4)
+ggplot(pc_meandummy,aes(x=Ho,y=T_seed_20/20, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range))) +  geom_point(size=2) +  scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Weight per seed (mg)")+  xlab("Observed heterozygosity") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)
+dev.off()
+test <-left_join(phen_ho, pc_meandummy,by="Pop")
+
+pdf("_Graph/_Greenhouse/seedweightho_popandind_data.pdf",height=10,width = 20)
+ggplot(test,aes(x=Ho.y,y=T_seed_20.y/20, color=factor(Range.y), shape=factor(Range.y))) +
+  geom_point(size=2, aes(fill=factor(Range.y)))+  geom_point(size=2) +  scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Weight per seed (mg)")+  xlab("Observed heterozygosity")+
+  geom_point(size=2, aes(x=Ho.x,y=T_seed_20.x/20, color=factor(Range.x), shape=factor(Range.x))) +theme(legend.position = "none")+ geom_line(data=test, aes(y=fit)) + geom_ribbon(data=test,aes(ymin=lwr,ymax=upr, fill=factor(Range.y)),alpha=0.3, lty=0)
+dev.off()
+
+ggplot(test,aes(x=Ho.y, y=Ho.x, color=factor(Pop)))+geom_point()+theme_bw()+ylab("Individual observed heterozygosity")+xlab("individual Ho averaged over population")
+ggplot(test,aes(x=T_seed_20.y/20, y=T_seed_20.x/20, color=factor(Pop)))+geom_point()+theme_bw()+ylab("Individual seed weight")+xlab("individual seed weight averaged over population")
+
+
+##Weight per maternal seed
+pc_meandummy<- pcho_mean[ ,which(names(pcho_mean) %in% c("T_momseed_mg","Ho","E_Latitudeabs","Range"))]
+pc_meandummy<-pc_meandummy[complete.cases(pc_meandummy), ]
+#predict the model for a mean latitude as latitude has an additive effect
+pc_meandummy$E_Latitudeabs<- mean(pc_meandummy$E_Latitudeabs)
+mod<-lm(sqrt(T_momseed_mg)~ Ho+E_Latitudeabs+Range , data = pc_meandummy)
+
+fitted <- predict(mod, interval="confidence")
+fitted2 <- fitted^2
+pc_meandummy<-cbind(pc_meandummy,fitted2)
+
+pdf("_Graph/_Greenhouse/momseedho.pdf",height=4,width = 4)
+ggplot(pc_meandummy,aes(x=Ho,y=T_momseed_mg, color=factor(Range), shape=factor(Range))) +
+  geom_point(size=2, aes(fill=factor(Range)))+  geom_point(size=2) +  scale_shape_manual(values=c(21,22,24))+ theme_bw()+ylab("Weight per maternal seed (mg)")+  xlab("Observed heterozygosity") +theme(legend.position = "none")+ geom_line(data=pc_meandummy, aes(y=fit)) + geom_ribbon(data=pc_meandummy,aes(ymin=lwr,ymax=upr, fill=factor(Range)),alpha=0.3, lty=0)
+dev.off()
+```
+
+*END SCRIPT*
+---
